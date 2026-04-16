@@ -40,6 +40,21 @@
 #define GN_GROUPS_FACE   8u    /* groups per face (64/8)             */
 #define GN_LINE_MAX      CYL_FULL_N   /* 3456 total lines            */
 
+/* N4 FIX: Barrett constant สำหรับ mod6 */
+#define BARRETT_MOD6_K14  2731U    /* fix: สำหรับ slot→spoke conversion */
+
+/* N3 FIX: dodeca constants */
+#define DODECA_PATHS 12    /* 12 dodeca faces */
+#define DODECA_WINDOW_LO 96   /* min valid score */
+#define DODECA_WINDOW_HI 128  /* max valid score */
+
+/* ── Dodeca stats (N3) ──────────────────────────────────────────── */
+typedef struct {
+    uint32_t dodeca_score;     /* accumulated score */
+    uint32_t valid_paths;      /* count of valid dodeca paths */
+    uint8_t  last_verdict;     /* 1=pass, 0=fail */
+} DodecaStats;
+
 /* ── Route result ───────────────────────────────────────────────── */
 typedef struct {
     uint8_t  spoke;        /* 0..5                                   */
@@ -54,10 +69,12 @@ typedef struct {
 
 /* ── GeoNet context ─────────────────────────────────────────────── */
 typedef struct {
-    ThirdEye  eye;          /* adaptive observer                     */
-    uint32_t  line_cursor;  /* current Hilbert line position         */
-    uint32_t  op_count;     /* total ops routed                      */
-    uint32_t  anomaly_signals; /* from pogls_qrpn fail feedback      */
+    ThirdEye    eye;          /* adaptive observer                     */
+    uint32_t    line_cursor;  /* current Hilbert line position         */
+    uint32_t    op_count;     /* total ops routed                      */
+    uint32_t    anomaly_signals; /* from pogls_qrpn fail feedback      */
+    DodecaStats stats;        /* N3 score tracking                     */
+    uint64_t    path_cores[DODECA_PATHS]; /* buffer for score calc     */
 } GeoNet;
 
 /* ── Init ───────────────────────────────────────────────────────── */
@@ -67,9 +84,25 @@ static inline void geo_net_init(GeoNet *gn, GeoSeed seed) {
 }
 
 /* ── Core: fast_mod6 (Barrett) ──────────────────────────────────── */
+/* N4 FIX: ใช้ k=14 สำหรับ precise conversion */
 static inline uint8_t _gn_mod6(uint32_t n) {
-    uint32_t q = (n * 10923U) >> 16;
+    uint32_t q = (n * BARRETT_MOD6_K14) >> 14;
     return (uint8_t)(n - q * 6U);
+}
+
+/* ── N3: dodeca score calculation ───────────────────────────────── */
+static inline uint32_t _gn_calc_dodeca_score(const uint64_t *cores, uint32_t n) {
+    if (!cores || n == 0) return 0;
+    uint32_t score = 0;
+    for (uint32_t i = 0; i < n && i < DODECA_PATHS; i++) {
+        uint32_t pc = (uint32_t)__builtin_popcountll(cores[i]);
+        score += (pc / 8);
+    }
+    return score;
+}
+
+static inline uint8_t _gn_dodeca_verdict(uint32_t score) {
+    return (score >= DODECA_WINDOW_LO && score <= DODECA_WINDOW_HI) ? 1 : 0;
 }
 
 /* ── Route: value+addr → GeoNetAddr ────────────────────────────── */
@@ -89,9 +122,18 @@ static inline GeoNetAddr geo_net_route(GeoNet    *gn,
     uint8_t  inv      = geo_spoke_invert(spoke);
     uint8_t  group    = unit / GN_GROUP_SIZE;
 
-    /* FIX S10.1: te_tick ต้องการ val_drift (arg5)
-     * geo_net ไม่มี value context → pass 0u (no drift weight) */
+    /* ThirdEye tick */
     te_tick(&gn->eye, cur, spoke, slot_hot, 0u);
+
+    /* N3 score tracking: use gen2 as core signal */
+    uint32_t path_idx = gn->op_count % DODECA_PATHS;
+    gn->path_cores[path_idx] = cur.gen2;
+    
+    if (path_idx == DODECA_PATHS - 1) {
+        gn->stats.dodeca_score = _gn_calc_dodeca_score(gn->path_cores, DODECA_PATHS);
+        gn->stats.valid_paths  = DODECA_PATHS;
+        gn->stats.last_verdict = _gn_dodeca_verdict(gn->stats.dodeca_score);
+    }
 
     uint8_t mask = te_get_mask(&gn->eye, spoke);
 
