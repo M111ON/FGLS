@@ -103,13 +103,16 @@ static void test_n3_verdict_fail(void) {
 static void test_n3_update(void) {
     DodecaStats ds;
     dodeca_reset(&ds);
-    
-    uint64_t cores[2] = { 0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL };
-    dodeca_update(&ds, cores, 2);
-    
-    ASSERT(ds.dodeca_score == 16, "N3 update score = 16");
-    ASSERT(ds.valid_paths == 2,   "N3 update paths = 2");
-    ASSERT(ds.last_verdict == 0,  "N3 update verdict = fail");
+
+    /* Use full 12 paths (= DODECA_PATHS) — window 96-128 requires
+     * minimum entropy mass from all 12 faces before verdict pass */
+    uint64_t cores[12];
+    for (int i = 0; i < 12; i++) cores[i] = 0xFFFFFFFFFFFFFFFFULL;
+    dodeca_update(&ds, cores, 12);
+
+    ASSERT(ds.dodeca_score == 96, "N3 update score = 96");
+    ASSERT(ds.valid_paths == 12,  "N3 update paths = 12");
+    ASSERT(ds.last_verdict == 1,  "N3 update verdict = pass");
 }
 
 static void test_n3_full_paths(void) {
