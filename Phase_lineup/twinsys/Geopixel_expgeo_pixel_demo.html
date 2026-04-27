@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GeoPixel — POGLS Coordinate Transform</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap');
+
+  :root {
+    --bg: #050810;
+    --panel: #0a0f1e;
+    --border: #1a2440;
+    --accent: #00ffe0;
+    --accent2: #ff6b35;
+    --accent3: #a855f7;
+    --text: #c8d8f0;
+    --dim: #4a6080;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    grid-template-rows: 56px 1fr;
+    gap: 0;
+  }
+
+  header {
+    grid-column: 1/-1;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 16px;
+  }
+  header h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    letter-spacing: 3px;
+    color: var(--accent);
+  }
+  header span {
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+
+  .canvas-area {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow: hidden;
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .controls label {
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 2px;
+    background: var(--border);
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+
+  select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 4px 8px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  btn {
+    display: inline-block;
+    padding: 5px 14px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  btn:hover { background: var(--accent); color: var(--bg); }
+
+  .grid-wrap {
+    flex: 1;
+    overflow: auto;
+    border: 1px solid var(--border);
+    position: relative;
+    background: #020408;
+  }
+
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    cursor: crosshair;
+  }
+
+  .hover-line {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    font-size: 10px;
+    color: var(--accent);
+    background: rgba(0,0,0,0.85);
+    padding: 3px 7px;
+    border: 1px solid var(--accent);
+    white-space: nowrap;
+    display: none;
+  }
+
+  /* ── right panel ── */
+  .panel {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 20px 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .section-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+  }
+
+  .pixel-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .info-cell {
+    background: #060c18;
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+  }
+  .info-cell .lbl {
+    font-size: 9px;
+    color: var(--dim);
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .info-cell .val {
+    font-size: 16px;
+    font-family: 'Orbitron', sans-serif;
+    color: var(--accent);
+  }
+  .info-cell .val.trit  { color: #00ffe0; }
+  .info-cell .val.spoke { color: #ff6b35; }
+  .info-cell .val.letter{ color: #a855f7; }
+  .info-cell .val.fibo  { color: #facc15; }
+  .info-cell .val.coset { color: #34d399; }
+
+  .rgb-bar {
+    display: flex;
+    height: 28px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .rgb-bar div { flex:1; display:flex; align-items:center; justify-content:center; font-size:11px; }
+
+  .formula-block {
+    background: #060c18;
+    border: 1px solid var(--border);
+    padding: 12px;
+    font-size: 11px;
+    line-height: 1.9;
+    color: var(--text);
+  }
+  .formula-block .kw  { color: var(--accent); }
+  .formula-block .num { color: var(--accent2); }
+  .formula-block .var { color: var(--accent3); }
+
+  .direction-compass {
+    display: grid;
+    grid-template-columns: repeat(3,1fr);
+    gap: 3px;
+    width: 96px;
+    margin: 0 auto;
+  }
+  .dir-cell {
+    width: 30px; height: 30px;
+    border: 1px solid var(--border);
+    display: flex; align-items:center; justify-content:center;
+    font-size: 14px;
+    transition: all 0.2s;
+    color: var(--dim);
+  }
+  .dir-cell.active { border-color: var(--accent); color: var(--accent); background: rgba(0,255,224,0.08); }
+  .dir-cell.center { border-color: var(--accent3); color: var(--accent3); }
+
+  .letter-display {
+    text-align: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 36px;
+    color: var(--accent3);
+    letter-spacing: 8px;
+    padding: 8px 0;
+  }
+
+  .legend {
+    display: flex; flex-direction:column; gap:6px;
+  }
+  .legend-row {
+    display: flex; align-items:center; gap:8px; font-size:10px;
+  }
+  .legend-swatch {
+    width: 14px; height: 14px; flex-shrink:0;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GEOPIXEL</h1>
+  <span>POGLS coordinate transform visualizer · (x,y) → trit/spoke/letter/fibo</span>
+</header>
+
+<div class="canvas-area">
+  <div class="controls">
+    <label>WIDTH</label>
+    <input type="range" id="wSlider" min="8" max="54" value="27" step="1">
+    <span id="wVal" style="font-size:12px;color:var(--accent)">27</span>
+
+    <label style="margin-left:16px">HEIGHT</label>
+    <input type="range" id="hSlider" min="8" max="54" value="27" step="1">
+    <span id="hVal" style="font-size:12px;color:var(--accent)">27</span>
+
+    <label style="margin-left:16px">MODE</label>
+    <select id="modeSelect">
+      <option value="geo">GEO (trit/spoke)</option>
+      <option value="fibo">FIBO (clock gear)</option>
+      <option value="letter">LETTER (LC pair)</option>
+      <option value="full">FULL (all channels)</option>
+    </select>
+
+    <btn id="encodeBtn">ENCODE SAMPLE</btn>
+    <btn id="resetBtn">RESET</btn>
+  </div>
+
+  <div class="grid-wrap" id="gridWrap">
+    <canvas id="mainCanvas"></canvas>
+    <div class="hover-line" id="hoverLine"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div>
+    <div class="section-title">PIXEL INSPECTOR</div>
+    <div class="pixel-info">
+      <div class="info-cell">
+        <div class="lbl">POSITION</div>
+        <div class="val" id="iPos">—</div>
+      </div>
+      <div class="info-cell">
+        <div class="lbl">IDX (raster)</div>
+        <div class="val" id="iIdx">—</div>
+      </div>
+      <div class="info-cell">
+        <div class="lbl">TRIT (% 27)</div>
+        <div class="val trit" id="iTrit">—</div>
+      </div>
+      <div class="info-cell">
+        <div class="lbl">SPOKE (% 6)</div>
+        <div class="val spoke" id="iSpoke">—</div>
+      </div>
+      <div class="info-cell">
+        <div class="lbl">COSET (% 9)</div>
+        <div class="val coset" id="iCoset">—</div>
+      </div>
+      <div class="info-cell">
+        <div class="lbl">FIBO (% 144)</div>
+        <div class="val fibo" id="iFibo">—</div>
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <div class="lbl" style="font-size:9px;color:var(--dim);letter-spacing:1px;margin-bottom:6px">LETTER PAIR (% 26)</div>
+      <div class="letter-display" id="iLetter">—</div>
+    </div>
+    <div style="margin-top:10px">
+      <div class="lbl" style="font-size:9px;color:var(--dim);letter-spacing:1px;margin-bottom:6px">RGB VALUE</div>
+      <div class="rgb-bar" id="iRGB">
+        <div style="background:#300">R:—</div>
+        <div style="background:#030">G:—</div>
+        <div style="background:#003">B:—</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">DIRECTION</div>
+    <div class="direction-compass" id="compass">
+      <!-- 3×3 grid: NW N NE / W C E / SW S SE -->
+    </div>
+    <div style="text-align:center;font-size:9px;color:var(--dim);margin-top:6px" id="dirLabel">hover a pixel</div>
+  </div>
+
+  <div>
+    <div class="section-title">TRANSFORM FORMULA</div>
+    <div class="formula-block">
+      <span class="var">idx</span>   = <span class="var">y</span> × <span class="var">W</span> + <span class="var">x</span><br>
+      <span class="kw">trit</span>  = <span class="var">idx</span> % <span class="num">27</span><br>
+      <span class="kw">spoke</span> = <span class="var">idx</span> % <span class="num">6</span><br>
+      <span class="kw">coset</span> = <span class="var">idx</span> % <span class="num">9</span><br>
+      <span class="kw">letter</span>= <span class="var">idx</span> % <span class="num">26</span><br>
+      <span class="kw">fibo</span>  = <span class="var">idx</span> % <span class="num">144</span><br><br>
+      <span class="kw">R</span> = (trit  &lt;&lt; 3) | spoke<br>
+      <span class="kw">G</span> = (coset &lt;&lt; 4) | (letter &amp; 0xF)<br>
+      <span class="kw">B</span> = fibo &amp; 0xFF
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">LEGEND</div>
+    <div class="legend">
+      <div class="legend-row">
+        <div class="legend-swatch" style="background:#00ffe0"></div>
+        <span>trit cycle (27) — ternary address</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-swatch" style="background:#ff6b35"></div>
+        <span>spoke (6) — dodeca direction</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-swatch" style="background:#a855f7"></div>
+        <span>letter (26) — LC pair index</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-swatch" style="background:#facc15"></div>
+        <span>fibo (144) — clock gear state</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── constants (sacred numbers)
+const TRIT_MOD   = 27;
+const SPOKE_MOD  = 6;
+const COSET_MOD  = 9;
+const LETTER_MOD = 26;
+const FIBO_MOD   = 144;
+const DIRECTIONS = ['NW','N','NE','W','·','E','SW','S','SE'];
+const LETTERS    = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
+// ── direction color (12 dodeca mapped to 8 compass + center)
+// spoke 0-5 → primary, 6-11 → diagonal (we compute from trit%12 for dir)
+function spokeToDir(spoke) {
+  // spoke 0-5 → N,NE,SE,S,SW,NW  (6 primary)
+  return [1,2,5,7,6,3][spoke % 6];
+}
+
+// ── transform
+function transform(x, y, W) {
+  const idx   = y * W + x;
+  const trit  = idx % TRIT_MOD;
+  const spoke = idx % SPOKE_MOD;
+  const coset = idx % COSET_MOD;
+  const letter= idx % LETTER_MOD;
+  const fibo  = idx % FIBO_MOD;
+  const dir   = spokeToDir(spoke);
+  return { idx, trit, spoke, coset, letter, fibo, dir };
+}
+
+// ── pixel color by mode
+function pixelColor(t, mode) {
+  const { trit, spoke, coset, letter, fibo } = t;
+  switch(mode) {
+    case 'geo':
+      return [
+        Math.round((trit  / 26) * 200 + 30),
+        Math.round((spoke /  5) * 200 + 30),
+        60
+      ];
+    case 'fibo':
+      return [
+        Math.round((fibo / 143) * 255),
+        Math.round(((fibo * 7) % 144) / 143 * 200),
+        Math.round(((fibo * 13) % 144) / 143 * 180)
+      ];
+    case 'letter': {
+      const h = (letter / 25) * 300;
+      return hslToRgb(h, 80, 45);
+    }
+    case 'full': {
+      const R = ((trit  << 3) | spoke)  & 0xFF;
+      const G = ((coset << 4) | (letter & 0xF)) & 0xFF;
+      const B = fibo & 0xFF;
+      return [R, G, B];
+    }
+  }
+}
+
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h/30) % 12;
+  const a = s * Math.min(l, 1-l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n)-3, Math.min(9-k(n),1)));
+  return [Math.round(f(0)*255), Math.round(f(8)*255), Math.round(f(4)*255)];
+}
+
+// ── render
+const canvas = document.getElementById('mainCanvas');
+const ctx    = canvas.getContext('2d');
+const SCALE  = 18;
+
+let W = 27, H = 27, MODE = 'geo';
+
+function render() {
+  canvas.width  = W * SCALE;
+  canvas.height = H * SCALE;
+  const img = ctx.createImageData(W * SCALE, H * SCALE);
+  const d   = img.data;
+
+  for (let py = 0; py < H; py++) {
+    for (let px = 0; px < W; px++) {
+      const t   = transform(px, py, W);
+      const [r,g,b] = pixelColor(t, MODE);
+
+      for (let sy = 0; sy < SCALE; sy++) {
+        for (let sx = 0; sx < SCALE; sx++) {
+          const i = ((py*SCALE+sy)*W*SCALE + (px*SCALE+sx)) * 4;
+          // grid line
+          const isGrid = sx === 0 || sy === 0;
+          d[i]   = isGrid ? Math.max(0,r-40) : r;
+          d[i+1] = isGrid ? Math.max(0,g-40) : g;
+          d[i+2] = isGrid ? Math.max(0,b-40) : b;
+          d[i+3] = 255;
+        }
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  // draw trit boundary markers (every 27 pixels)
+  ctx.strokeStyle = 'rgba(0,255,224,0.25)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= W; i += 27) {
+    ctx.beginPath();
+    ctx.moveTo(i * SCALE, 0);
+    ctx.lineTo(i * SCALE, H * SCALE);
+    ctx.stroke();
+  }
+  for (let j = 0; j <= H; j += 27) {
+    ctx.beginPath();
+    ctx.moveTo(0, j * SCALE);
+    ctx.lineTo(W * SCALE, j * SCALE);
+    ctx.stroke();
+  }
+}
+
+// ── compass
+function buildCompass() {
+  const c = document.getElementById('compass');
+  c.innerHTML = '';
+  DIRECTIONS.forEach((d,i) => {
+    const div = document.createElement('div');
+    div.className = 'dir-cell' + (i===4?' center':'');
+    div.textContent = i===4 ? '○' : ['↖','↑','↗','←','','→','↙','↓','↘'][i];
+    div.id = `dir${i}`;
+    c.appendChild(div);
+  });
+}
+buildCompass();
+
+// ── hover inspector
+const wrap = document.getElementById('gridWrap');
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const cx = Math.floor((e.clientX - rect.left) / SCALE);
+  const cy = Math.floor((e.clientY - rect.top)  / SCALE);
+  if (cx < 0 || cx >= W || cy < 0 || cy >= H) return;
+
+  const t = transform(cx, cy, W);
+  const [r,g,b] = pixelColor(t, MODE);
+  const letterChar = LETTERS[t.letter];
+  const dirIdx = t.dir;
+
+  document.getElementById('iPos').textContent   = `${cx},${cy}`;
+  document.getElementById('iIdx').textContent   = t.idx;
+  document.getElementById('iTrit').textContent  = t.trit;
+  document.getElementById('iSpoke').textContent = t.spoke;
+  document.getElementById('iCoset').textContent = t.coset;
+  document.getElementById('iFibo').textContent  = t.fibo;
+  document.getElementById('iLetter').textContent= letterChar + ' ' + LETTERS[t.letter + 26];
+
+  document.getElementById('iRGB').innerHTML =
+    `<div style="background:rgb(${r},0,0);color:#fff">R:${r}</div>
+     <div style="background:rgb(0,${g},0);color:#fff">G:${g}</div>
+     <div style="background:rgb(0,0,${b});color:#fff">B:${b}</div>`;
+
+  // compass highlight
+  DIRECTIONS.forEach((_,i) => {
+    const el = document.getElementById(`dir${i}`);
+    el.className = 'dir-cell' + (i===4?' center':'') + (i===dirIdx?' active':'');
+  });
+  document.getElementById('dirLabel').textContent =
+    `spoke=${t.spoke} → dir=${DIRECTIONS[dirIdx]}`;
+
+  // hover tooltip
+  const hl = document.getElementById('hoverLine');
+  hl.style.display = 'block';
+  hl.style.left = (e.clientX - wrap.getBoundingClientRect().left + 10) + 'px';
+  hl.style.top  = (e.clientY - wrap.getBoundingClientRect().top  + 10) + 'px';
+  hl.textContent = `[${cx},${cy}] idx=${t.idx} trit=${t.trit} spoke=${t.spoke} ${letterChar}`;
+});
+canvas.addEventListener('mouseleave', () => {
+  document.getElementById('hoverLine').style.display = 'none';
+});
+
+// ── controls
+document.getElementById('wSlider').addEventListener('input', e => {
+  W = +e.target.value;
+  document.getElementById('wVal').textContent = W;
+  render();
+});
+document.getElementById('hSlider').addEventListener('input', e => {
+  H = +e.target.value;
+  document.getElementById('hVal').textContent = H;
+  render();
+});
+document.getElementById('modeSelect').addEventListener('change', e => {
+  MODE = e.target.value;
+  render();
+});
+document.getElementById('encodeBtn').addEventListener('click', () => {
+  // encode sample string "POGLS" into pixel grid
+  const msg = [80,79,71,76,83]; // ASCII: POGLS
+  ctx.save();
+  msg.forEach((byte, bi) => {
+    for (let bit = 7; bit >= 0; bit--) {
+      const bitval = (byte >> bit) & 1;
+      const pixIdx = bi * 8 + (7 - bit);
+      const px = pixIdx % W;
+      const py = Math.floor(pixIdx / W);
+      if (py < H) {
+        ctx.fillStyle = bitval ? 'rgba(0,255,224,0.9)' : 'rgba(255,100,50,0.4)';
+        ctx.fillRect(px*SCALE+1, py*SCALE+1, SCALE-2, SCALE-2);
+      }
+    }
+  });
+  ctx.restore();
+});
+document.getElementById('resetBtn').addEventListener('click', render);
+
+// ── init
+render();
+</script>
+</body>
+</html>
