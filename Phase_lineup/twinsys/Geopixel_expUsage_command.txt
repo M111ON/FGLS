@@ -1,0 +1,8 @@
+# encode folder
+!python hilbert_vault_v3.py encode /content/your_folder
+
+# decode
+!python hilbert_vault_v3.py decode /content/your_folder.vault.svg
+
+# verify
+!python hilbert_vault_v3.py verify /content/your_folder /content/your_folder_decoded
